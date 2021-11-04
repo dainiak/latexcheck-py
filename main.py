@@ -108,6 +108,12 @@ def has_sibling(node, predicate):
     return has_child(node.parent, (lambda x: x is not node and predicate(x)))
 
 
+def is_pure_argument(node):
+    while node.parent and node.parent.cat in [LatCat.BRACES, LatCat.BRACKETS]:
+        node = node.parent
+    return node.parent and node.parent.cat == LatCat.CMD and node.parent.token in ['ref', 'label', 'tag']
+
+
 def traverse_tex(tex, parent_node_list=None, depth=0):
     global AGG_STRINGS
     no_parent = False
@@ -265,10 +271,12 @@ def perform_checks(source, debug_mode=False):
         if err_code not in helpers.error_descriptions:
             return
         if isinstance(pos, Treenode):
-            while pos is not None and pos.pos is None:
-                pos = pos.prev_node
-            if pos is not None:
-                pos = pos.pos
+            node = pos
+            pos = None
+            while node is not None and node.pos is None:
+                node = node.prev_node
+            if node is not None and node.pos is not None and node.pos > 0:
+                pos = node.pos
 
         if err_code not in errors:
             errors[err_code] = []
@@ -304,7 +312,7 @@ def perform_checks(source, debug_mode=False):
     re_dash_as_hyphen = re.compile(r"(^|\s)-\s+|\s+-(\s|$)")
     re_multiplication_star = re.compile(r"[^_^]\*|.\*")
     re_space_before_punctuation = re.compile(r"\s+[?!.,;:]")
-    re_space_after_punctuation = re.compile(r"[?!.,;:]\S")
+    re_space_after_punctuation = re.compile(r"[?!.,;:][^ ~\t\n\\]")
     re_space_before_parenthesis = re.compile(r"[^()\[\]{}\n\t-/+]\(")
     re_space_after_parenthesis = re.compile(r"\(\s")
     re_cyrillic_tricky_letter = re.compile(r"[уехаос]")
@@ -417,7 +425,7 @@ def perform_checks(source, debug_mode=False):
             if node.token.strip() == '' and node.prev_sibling and node.prev_sibling.cat == LatCat.ENV and node.prev_sibling.token == 'math' and node.next_sibling and node.next_sibling.cat == LatCat.ENV and node.next_sibling.token == 'math':
                 add_error('UNNECESSARY_FORMULA_BREAK', node)
 
-        if not node.is_in_math and node.cat == LatCat.STR:
+        if not node.is_in_math and node.cat == LatCat.STR and not is_pure_argument(node):
             if re_nonsymbolic_reference.search(node.token):
                 add_error('SYMBOLIC_LINKS')
             if re_starts_with_uppercase.match(node.token) and node.prev_node.is_in_math and not (node.prev_node.cat == LatCat.STR and node.prev_node.token.strip().endswith('.')):
@@ -494,23 +502,7 @@ def perform_checks(source, debug_mode=False):
     return errors
 
 
-source = r'''\begin{solution}{one}{two}
-
-Рассмотрим формулу \( x \in Z, \) в результате имеем
-
-1) Случай \(x\not \in    5\)
-\begin{figure}
- \centering when 
-\end{figure}
-
-\begin{equation}
-x + \{\{y | y>0 \}\}  = z \label{eq1}
-\end{equation}
-
-\par Параграф
-РАссмотрим формулу \ref{eq1}
-
-\end{solution}'''
+source = r'''Мым: едузы~\ref{медузы:1} \(x_12\)'''
 
 errors = perform_checks(source, debug_mode=True)
 pprint(errors)

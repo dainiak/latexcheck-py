@@ -385,9 +385,6 @@ def perform_checks(source, debug_mode=False):
         if node.cat == LatCat.CMD and node.token == 'label' and node.args and len(node.args) == 1 and re_trivial_label.match(node.args[0].tex):
             add_error('TRIVIAL_LABEL', node)
 
-        if node.cat == LatCat.CMD and node.token in ['textbf', 'textit']:
-            add_error('TEXT_COMMANDS_IN_MATH_MODE')
-
         if node.cat == LatCat.CMD and node.token == 'ref' and node.prev_node and node.prev_node.token and node.prev_node.token.endswith('('):
             add_error('EQREF_INSTEAD_OF_REF', node)
         if node.cat == LatCat.CMD and node.token in ['ref', 'eqref'] and node.prev_node and node.prev_node.token and re_ends_with_space.search(node.prev_node.token):
@@ -398,6 +395,9 @@ def perform_checks(source, debug_mode=False):
 
         if node.is_in_math and node.token in ['mbox', 'hbox']:
             add_error('REPLACE_MBOX_WITH_TEXT', node)
+
+        if node.is_in_math and node.cat == LatCat.CMD and node.token in ['textbf', 'textit']:
+            add_error('TEXT_COMMANDS_IN_MATH_MODE')
 
         if node.is_in_math and node.cat == LatCat.STR:
             if '|' in node.token and ('\{' in node.token or has_sibling(node, lambda x: '\{' in x.token)) and not has_sibling(node, lambda x: x.token == 'mid'):
@@ -502,7 +502,9 @@ def perform_checks(source, debug_mode=False):
     return errors
 
 
-source = r'''Мым: едузы~\ref{медузы:1} \(x_12\)'''
+source = ''
+with open('tests/solution-442.tex', 'r') as infile:
+    source = infile.read()
 
 errors = perform_checks(source, debug_mode=True)
 pprint(errors)

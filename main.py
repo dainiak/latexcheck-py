@@ -35,11 +35,18 @@ class Treenode:
     parent: Treenode = None
     is_in_math: bool = False
     is_in_display_math: bool = False
+    is_in_arg: bool = False
     pos: int = None
     tex: str = None
 
 
 AGG_STRINGS = True
+
+
+def is_command_with_no_text_semantics(node: Treenode):
+    if node is None:
+        return False
+    return node.cat == LatCat.CMD and node.token in ['label', 'ref', 'eqref', 'tag']
 
 
 def is_display_math(x):
@@ -111,7 +118,7 @@ def has_sibling(node, predicate):
 def is_pure_argument(node):
     while node.parent and node.parent.cat in [LatCat.BRACES, LatCat.BRACKETS]:
         node = node.parent
-    return node.parent and node.parent.cat == LatCat.CMD and node.parent.token in ['ref', 'label', 'tag']
+    return is_command_with_no_text_semantics(node)
 
 
 def traverse_tex(tex, parent_node_list=None, depth=0):
@@ -161,12 +168,14 @@ def traverse_tex(tex, parent_node_list=None, depth=0):
         for t in tex.args:
             traverse_tex(t, new_node.args, depth + 1)
 
-    new_node.children = []
-    for t in tex.contents:
-        traverse_tex(t, new_node.children, depth + 1)
-    if new_node.args and not AGG_STRINGS:
-        n_arg_tokens = sum(len(node.children) for node in new_node.args)
-        new_node.children = new_node.children[n_arg_tokens:]
+    new_node.children = None
+    if not is_command_with_no_text_semantics(new_node):
+        new_node.children = []
+        for t in tex.contents:
+            traverse_tex(t, new_node.children, depth + 1)
+        if new_node.args and not AGG_STRINGS:
+            n_arg_tokens = sum(len(node.children) for node in new_node.args)
+            new_node.children = new_node.children[n_arg_tokens:]
 
     for nodelist in [new_node.args, new_node.children]:
         if nodelist is None:
@@ -187,8 +196,10 @@ def traverse_tex(tex, parent_node_list=None, depth=0):
 def fill_node_links(root_node):
     all_nodes = list()
 
-    def recursive_fill_all_nodes_list(node, math_mode=0):
+    def recursive_fill_all_nodes_list(node, math_mode=0, in_args=False):
         nonlocal all_nodes
+        if in_args:
+            node.is_in_arg = True
         if math_mode:
             node.is_in_math = True
         if math_mode == 2:
@@ -201,7 +212,7 @@ def fill_node_links(root_node):
         for nodelist in [node.args, node.children]:
             if nodelist is not None:
                 for child in nodelist:
-                    recursive_fill_all_nodes_list(child, math_mode)
+                    recursive_fill_all_nodes_list(child, math_mode, in_args or (nodelist is node.args) and is_command_with_no_text_semantics(node))
 
     recursive_fill_all_nodes_list(root_node)
     for i in range(1, len(all_nodes)):
@@ -322,11 +333,11 @@ def perform_checks(source, debug_mode=False):
     re_latin_letter_outside_math_en = re.compile(r" (^ |[, .~])[b-zA-HJ-Z]($ | [,.:!? ~-]) ")
     re_capitalization_after_comma = re.compile(r"[,;:]\s*[А-ЯЁA-Z]")
     re_capitalization_after_period = re.compile(r"\.\s*[а-яёa-z]")
-    re_starts_with_lowercase = re.compile(r"^\s*[а-яёa-z].*")
-    re_starts_with_uppercase = re.compile(r"^\s*[А-ЯЁA-Z].*")
-    re_ends_with_space = re.compile(r"[ \n\t]$")
+    re_starts_with_lowercase = re.compile(r"^\s*[а-яёa-z].*", re.DOTALL)
+    re_starts_with_uppercase = re.compile(r"^\s*[А-ЯЁA-Z].*", re.DOTALL)
+    re_ends_with_space = re.compile(r".*[ \n\t]$", re.DOTALL)
     re_starts_with_cyrillic = re.compile(r"^[а-яё]", re.IGNORECASE)
-    re_ends_with_digit_or_letter = re.compile(r".*[0-9a-z]\s*$", re.IGNORECASE)
+    re_ends_with_digit_or_letter = re.compile(r".*[0-9a-z]\s*$", re.IGNORECASE | re.DOTALL)
     re_possibly_word = re.compile(r"([^a-z\\]|^)([a-z]{4,}|bad|[a-z]{2,3}\.)", re.IGNORECASE)
     re_multiple_spaces = re.compile(r"(~|\\:|\\ |\\,|\\!|\\>|\\space|\{ }){2,}")
     re_trivial_label = re.compile(r"\{?\s*(eq|equation|eqn|th|thm|lemma|theorem|lem|fig|figure)?:?[^a-z}]\s*}?", re.IGNORECASE)
@@ -366,7 +377,7 @@ def perform_checks(source, debug_mode=False):
             add_error('MID_IN_SET_COMPREHENSION', node)
 
         if (node.cat == LatCat.CMD and node.token in ['sum', 'prod', 'frac', 'binom']
-                and node.prev_node and node.prev_node.is_in_math and re_ends_with_digit_or_letter.match(node.prev_node.token)):
+                and node.prev_node and node.prev_node.is_in_math and node.prev_node.cat != LatCat.CMD and not node.prev_node.is_in_arg and re_ends_with_digit_or_letter.match(node.prev_node.token)):
             add_error('CDOT_FOR_READABILITY', node)
         if node.cat == LatCat.CMD and node.token == 'centering':
             if not (node.parent and node.parent.token in ['figure', 'table']):
@@ -400,7 +411,7 @@ def perform_checks(source, debug_mode=False):
             add_error('TEXT_COMMANDS_IN_MATH_MODE')
 
         if node.is_in_math and node.cat == LatCat.STR:
-            if '|' in node.token and ('\{' in node.token or has_sibling(node, lambda x: '\{' in x.token)) and not has_sibling(node, lambda x: x.token == 'mid'):
+            if '|' in node.token and (r'\{' in node.token or has_sibling(node, lambda x: r'\{' in (x.token or ''))) and not has_sibling(node, lambda x: x.token == 'mid'):
                 add_error('MID_IN_SET_COMPREHENSION', node)
             if '(' in node.token and node.next_node and node.next_node.token in ['sum', 'prod', 'frac', 'binom']:
                 add_error('LEFT_RIGHT_RECOMMENDED', node)
@@ -503,9 +514,11 @@ def perform_checks(source, debug_mode=False):
 
 
 source = ''
-with open('tests/solution-442.tex', 'r') as infile:
+with open('tests/solution-265.tex', 'r') as infile:
     source = infile.read()
 
 errors = perform_checks(source, debug_mode=True)
-pprint(errors)
 
+for key, value in errors.items():
+    print(f'{key}: {", ".join(repr(source[t-10:t+50]) for t in value)}')
+    # pprint(errors)

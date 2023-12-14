@@ -1,17 +1,16 @@
-# encoding: utf-8
-
 from __future__ import annotations
 
-import TexSoup
+import argparse
+import os
 import re
-from pprint import pprint
-
+import textwrap
 from dataclasses import dataclass
 from enum import Enum
 from typing import List
 
+import TexSoup
 
-import helpers
+from helpers import SupportedLanguages, error_descriptions
 
 
 class LatCat(Enum):
@@ -79,7 +78,7 @@ def is_math(x):
 def initiates_text_mode(x):
     if x is None:
         return False
-    text_envs = ['mbox', 'hbox', 'text', 'textnormal', 'textrm', 'textit', 'textsf']
+    text_envs = ['mbox', 'hbox', 'text', 'textnormal', 'textrm', 'textit', 'textsf', 'texttt']
     if isinstance(x, Treenode):
         return x.token in text_envs
     return x in text_envs
@@ -274,16 +273,16 @@ def tree_to_str(node, depth=0):
     return s
 
 
-def perform_checks(source, debug_mode=False):
+def perform_checks(source: str, language: SupportedLanguages=SupportedLanguages.EN, debug_mode=False):
     errors = {}
 
     def add_error(err_code, pos=None):
         nonlocal errors
-        if err_code not in helpers.error_descriptions:
+        if err_code not in error_descriptions[language]:
             return
         if isinstance(pos, Treenode):
             node = pos
-            pos = None
+            pos = 0
             while node is not None and node.pos is None:
                 node = node.prev_node
             if node is not None and node.pos is not None and node.pos > 0:
@@ -297,7 +296,7 @@ def perform_checks(source, debug_mode=False):
         soup = TexSoup.TexSoup(source)
     except Exception as e:
         e = str(e)
-        offset = re.search(r'\[Line:? \d+, Offset:? (\d+)\]', e)
+        offset = re.search(r'\[Line:? \d+, Offset:? (\d+)]', e)
         if offset:
             offset = int(offset.group(1))
         add_error('PARSE_ERROR', offset)
@@ -306,7 +305,7 @@ def perform_checks(source, debug_mode=False):
     try:
         latex_tree = traverse_tex(soup)
         all_nodes = fill_node_links(latex_tree)
-    except Exception as e:
+    except Exception as _:
         add_error('PARSE_ERROR', None)
         return errors
 
@@ -345,6 +344,7 @@ def perform_checks(source, debug_mode=False):
     re_mod_cmd = re.compile(r"\bmod\b")
     re_math_no_backslash = re.compile(r"([^\\a-z]|^)(cos|csc|exp|ker|limsup|max|min|sinh|arcsin|cosh|deg|gcd|lg|ln|Pr|sup|arctan|cot|det|hom|lim|log|sec|tan|arg|coth|dim|liminf|sin|tanh)[^a-z]")
     re_ru_ordinal = re.compile(r"\s*-{1,2}\s*(ый|ого|о|тому|ому|ему|ом|ая|ой|ую|ые|ыми|и|ым|тым|той|им|его|того|тых|ых|том|ем|ём|ех|ёх|ух)([^а-яё]|$)", re.IGNORECASE | re.DOTALL | re.UNICODE)
+    re_small_numeral = re.compile(r"([,.!?:]|\W\s+)[0-5]([,.!?:]|\s+\W)")
 
     for node in all_nodes:
         if node.cat == LatCat.STR:
@@ -373,7 +373,7 @@ def perform_checks(source, debug_mode=False):
         if is_math(node) and len(node.children) == 1 and node.children[0].cat != LatCat.STR:
             add_error('UNNECESSARY_MATH_MODE', node)
 
-        if node.cat == LatCat.CMD and node.token == 'mid' and not has_sibling(node, lambda x: '\{' in x.token):
+        if node.cat == LatCat.CMD and node.token == 'mid' and not has_sibling(node, lambda x: r'\{' in x.token):
             add_error('MID_IN_SET_COMPREHENSION', node)
 
         if (node.cat == LatCat.CMD and node.token in ['sum', 'prod', 'frac', 'binom']
@@ -480,6 +480,10 @@ def perform_checks(source, debug_mode=False):
                 add_error('DASH_SURROUND_WITH_SPACES', node)
             if re_ru_ordinal.search(node.token):
                 add_error('RU_ORDINAL_ABBREVIATION', node)
+            if '\\\\' in node.token:
+                add_error('SUGGESTED_NEW_PARAGRAPH', node)
+            if re_small_numeral.search(node.token):
+                add_error('NUMERALS_AS_WORDS', node)
         if (node.token and node.token.strip().endswith(r'\\') or node.token == r'par') and node.next_node and is_display_math(node.next_node):
             add_error('PARAGRAPH_BREAK_BEFORE_DISPLAY_FORMULA', node)
 
@@ -488,6 +492,10 @@ def perform_checks(source, debug_mode=False):
 
         if node.cat == LatCat.CMD and node.token in ['it', 'bf', 'sf', 'rm']:
             add_error('LOW_LEVEL_FONT_COMMANDS', node)
+
+        if node.cat == LatCat.CMD and node.token == 'textit':
+            add_error('ITALIC_INSTEAD_OF_EMPH', node)
+
         if node.cat == LatCat.CMD and node.token == 'cite' and (
                 node.prev_node and (node.prev_node.is_in_math or is_math(node.prev_node))
                 or
@@ -513,12 +521,70 @@ def perform_checks(source, debug_mode=False):
     return errors
 
 
-source = ''
-with open('tests/solution-265.tex', 'r') as infile:
-    source = infile.read()
+def html_to_console(html_text, rich_text=True, width=80):
+    formats = {
+        'red': '\033[91m',
+        'green': '\033[92m',
+        'blue': '\033[94m',
+        'bold': '\033[1m',
+        'italics': '\033[3m',
+        'underline': '\033[4m',
+        'end': '\033[0m'
+    }
+    if not rich_text:
+        formats = {k: '' for k in formats}
 
-errors = perform_checks(source, debug_mode=True)
+    html_entities = {
+        '&nbsp;': ' ',
+        '&thinsp;': '\u2009',
+        '&amp;': '&',
+        '&mdash;': '—',
+        '&ndash;': '–',
+        '&hellip;': '…',
+        '&laquo;': '«',
+        '&raquo;': '»',
+        '&lt;': '<',
+        '&gt;': '>'
+    }
 
-for key, value in errors.items():
-    print(f'{key}: {", ".join(repr(source[t-10:t+50]) for t in value)}')
-    # pprint(errors)
+    text = html_text
+    for entity, char in html_entities.items():
+        text = text.replace(entity, char)
+
+    wrapper = textwrap.TextWrapper(width=width)
+    text = wrapper.fill(text)
+
+    text = re.sub(r'<em>(.*?)<\/em>', f"{formats['italics']}\\1{formats['end']}", text)
+    text = re.sub(r'<strong>(.*?)<\/strong>', f"{formats['bold']}\\1{formats['end']}", text)
+    text = re.sub(r'<code>(.*?)<\/code>', f"{formats['green']}\\1{formats['end']}", text)
+    text = re.sub(r'<a\s+href="([^"]*?)"[^>]*>(.*?)<\/a>', f"[{formats['underline']}\\2{formats['end']}](\\1)", text)
+
+    return text
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Perform checks on a LaTeX file.')
+    parser.add_argument('filename_pos', nargs='?', help='Path to the LaTeX file (positional argument)', default=None)
+    parser.add_argument('-f', '--filename', help='Path to the LaTeX file (option)', default=None)
+    parser.add_argument('-l', '--language', choices=['EN', 'RU'], default='EN', help='Language for error descriptions (EN or RU)')
+    parser.add_argument('-r', '--rich', choices=['Y', 'N'], help='Rich text in console output', default='Y')
+    args = parser.parse_args()
+
+    filename = args.filename_pos if args.filename_pos is not None else args.filename
+    if not os.path.exists(filename):
+        print(f"'File {filename} does not exist.")
+        return
+    with open(filename, 'r') as infile:
+        source = infile.read()
+
+    language = SupportedLanguages.EN if args.language.lower() == 'en' else SupportedLanguages.RU
+    rich = args.rich.lower() == 'y'
+    errors = perform_checks(source, language=language, debug_mode=False)
+
+    for key, value in errors.items():
+        print(f'{key}:\n    {"\n    ".join(repr(source[max(0, t-10):t+20]) for t in value)}')
+        if explanation := error_descriptions[language][key]:
+            print(f'\nExplanation:  {html_to_console(explanation['msg'], rich_text=rich)}\n')
+
+if __name__ == '__main__':
+    main()

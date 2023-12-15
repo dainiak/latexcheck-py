@@ -10,7 +10,7 @@ from typing import List
 
 import TexSoup
 
-from helpers import SupportedLanguages, error_descriptions
+from .helpers import SupportedLanguages, error_descriptions
 
 
 class LatCat(Enum):
@@ -273,24 +273,27 @@ def tree_to_str(node, depth=0):
     return s
 
 
-def perform_checks(source: str, language: SupportedLanguages=SupportedLanguages.EN, debug_mode=False):
+def perform_checks(source: str, language: SupportedLanguages = SupportedLanguages.EN, debug_mode=False):
     errors = {}
 
-    def add_error(err_code, pos=None):
+    def add_error(err_code, bad_node=None):
         nonlocal errors
         if err_code not in error_descriptions[language]:
             return
-        if isinstance(pos, Treenode):
-            node = pos
+        pos = None
+        if isinstance(bad_node, int):
+            pos = bad_node
+        elif isinstance(bad_node, Treenode):
             pos = 0
-            while node is not None and node.pos is None:
-                node = node.prev_node
-            if node is not None and node.pos is not None and node.pos > 0:
-                pos = node.pos
+            while bad_node is not None and bad_node.pos is None:
+                bad_node = bad_node.prev_node
+            if bad_node and bad_node.pos and bad_node.pos:
+                pos = bad_node.pos
 
         if err_code not in errors:
             errors[err_code] = []
-        errors[err_code].append(pos)
+        if pos is not None:
+            errors[err_code].append(pos)
 
     try:
         soup = TexSoup.TexSoup(source)
@@ -318,7 +321,6 @@ def perform_checks(source: str, language: SupportedLanguages=SupportedLanguages.
 
     re_td = re.compile(r"т\. ?(д\.|н\.|ч\.|к\.)", re.IGNORECASE)
     re_dash_no_spaces = re.compile(r"--([^- ~\n]|$)|(^|[^- ~\n])--")
-    re_floor = re.compile(r"\[[^\[\],;]+]")
     re_dash_as_hyphen = re.compile(r"(^|\s)-\s+|\s+-(\s|$)")
     re_multiplication_star = re.compile(r"[^_^]\*|.\*")
     re_space_before_punctuation = re.compile(r"\s+[?!.,;:]")
@@ -328,8 +330,8 @@ def perform_checks(source: str, language: SupportedLanguages=SupportedLanguages.
     re_cyrillic_tricky_letter = re.compile(r"[уехаос]")
     re_latin_c_in_rus_text = re.compile(r"[а-яё]\s*c|c\s*[а-яё]", re.IGNORECASE)
     re_math_command = re.compile(r"(\\(infty|cdot|sum))|([0-9 \n]+ *[=+*^])|([+*^] *[0-9 \n]+)")
-    re_latin_letter_outside_math_ru = re.compile(r" (^ |[, .~])[a-zA-Z]($ | [,.:!? ~-]) ")
-    re_latin_letter_outside_math_en = re.compile(r" (^ |[, .~])[b-zA-HJ-Z]($ | [,.:!? ~-]) ")
+    re_latin_letter_outside_math_ru = re.compile(r" (^|[, .~])[a-zA-Z]($|[,.:!? ~-]) ")
+    re_latin_letter_outside_math_en = re.compile(r" (^|[, .~])[b-zA-HJ-Z]($|[,.:!? ~-]) ")
     re_capitalization_after_comma = re.compile(r"[,;:]\s*[А-ЯЁA-Z]")
     re_capitalization_after_period = re.compile(r"\.\s*[а-яёa-z]")
     re_starts_with_lowercase = re.compile(r"^\s*[а-яёa-z].*", re.DOTALL)
@@ -554,23 +556,22 @@ def html_to_console(html_text, rich_text=True, width=80):
     wrapper = textwrap.TextWrapper(width=width)
     text = wrapper.fill(text)
 
-    text = re.sub(r'<em>(.*?)<\/em>', f"{formats['italics']}\\1{formats['end']}", text)
-    text = re.sub(r'<strong>(.*?)<\/strong>', f"{formats['bold']}\\1{formats['end']}", text)
-    text = re.sub(r'<code>(.*?)<\/code>', f"{formats['green']}\\1{formats['end']}", text)
-    text = re.sub(r'<a\s+href="([^"]*?)"[^>]*>(.*?)<\/a>', f"[{formats['underline']}\\2{formats['end']}](\\1)", text)
+    text = re.sub(r'<em>(.*?)</em>', f"{formats['italics']}\\1{formats['end']}", text)
+    text = re.sub(r'<strong>(.*?)</strong>', f"{formats['bold']}\\1{formats['end']}", text)
+    text = re.sub(r'<code>(.*?)</code>', f"{formats['green']}\\1{formats['end']}", text)
+    text = re.sub(r'<a\s+href="([^"]*?)"[^>]*>(.*?)</a>', f"[{formats['underline']}\\2{formats['end']}](\\1)", text)
 
     return text
 
 
 def main():
     parser = argparse.ArgumentParser(description='Perform checks on a LaTeX file.')
-    parser.add_argument('filename_pos', nargs='?', help='Path to the LaTeX file (positional argument)', default=None)
-    parser.add_argument('-f', '--filename', help='Path to the LaTeX file (option)', default=None)
+    parser.add_argument('filename', help='Path to the LaTeX file')
     parser.add_argument('-l', '--language', choices=['EN', 'RU'], default='EN', help='Language for error descriptions (EN or RU)')
-    parser.add_argument('-r', '--rich', choices=['Y', 'N'], help='Rich text in console output', default='Y')
+    parser.add_argument('-r', '--rich', choices=['Y', 'N'], help='Enable rich text in console output', default='Y')
     args = parser.parse_args()
 
-    filename = args.filename_pos if args.filename_pos is not None else args.filename
+    filename = args.filename
     if not os.path.exists(filename):
         print(f"'File {filename} does not exist.")
         return
@@ -585,6 +586,7 @@ def main():
         print(f'{key}:\n    {"\n    ".join(repr(source[max(0, t-10):t+20]) for t in value)}')
         if explanation := error_descriptions[language][key]:
             print(f'\nExplanation:  {html_to_console(explanation['msg'], rich_text=rich)}\n')
+
 
 if __name__ == '__main__':
     main()

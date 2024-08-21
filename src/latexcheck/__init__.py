@@ -583,9 +583,10 @@ def main():
     errors = perform_checks(source, language=language, debug_mode=False)
 
     for key, value in errors.items():
-        print(f'{key}:\n    {"\n    ".join(repr(source[max(0, t-10):t+20]) for t in value)}')
+        print(f'{key}:')
+        print("\n    ".join(repr(source[max(0, t-10):t+20]) for t in value))
         if explanation := error_descriptions[language][key]:
-            print(f'\nExplanation:  {html_to_console(explanation['msg'], rich_text=rich)}\n')
+            print(f'\nExplanation:  {html_to_console(explanation["msg"], rich_text=rich)}\n')
 
 
 if __name__ == '__main__':

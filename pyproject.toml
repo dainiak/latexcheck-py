@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "latexcheck"
+version = "1.2.6"
+description = "LaTeX linter"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "Alex Dainiak", email = "dainiak@gmail.com"},
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "texsoup>=0.3.1",
+]
+urls = { "Homepage" = "http://github.com/dainiak/latexcheck-py/" }
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+latexcheck = "latexcheck:main"

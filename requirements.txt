@@ -1,1 +1,1 @@
-TexSoup==0.3.1
+TexSoup>=0.3.1

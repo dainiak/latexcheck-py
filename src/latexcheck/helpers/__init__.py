@@ -351,7 +351,7 @@ error_descriptions[SupportedLanguages.EN] = {
         "severity": 0
     },
     "ABBREVIATIONS_WITH_SPACE": {
-        "msg": "Abbreviations like <em>i.&thinsp;e.</em>, <em>e.&thinsp;g.</em>, <a href=\"https://ru.wikipedia.org/wiki/Q.E.D.\" target=\"_blank\"><em>q.&thinsp;e.&thinsp;d.</em></a> and similar <a href=\"https://new.gramota.ru/spravka/buro/search-answer?s=296030\">should be formatted with a space</a> (see also <a href=\"https://popravilam.com/blog/105-probel-v-sokrashcheniyah.html\" target=\"_blank\">here</a>), but there is a peculiarity: it is necessary to use a <em>non-breaking</em> space <code>~</code> or, even better, <a href=\"https://ru.wikipedia.org/wiki/%D0%A3%D0%B7%D0%BA%D0%B8%D0%B9_%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB\" target=\"_blank\"><em>thin space</em></a> <code>\\,</code> \u2014 this is a non-breaking space slightly narrower than the usual one. For example: <code>q.\\,e.\\,d.</code>. Otherwise, a case may occur during text wrap when part of the abbreviation remains on the line and part moves to the next. Thin space also looks better in this case than a regular space. It is also used when typing <a href=\"https://new.gramota.ru/spravka/letters/78-init\" target=\"_blank\">initials</a>, for example: <code>J.\\,D.~Smith</code> or <code>J.\\,D.\\,Smith</code>.",
+        "msg": "Abbreviations like <em>i.&thinsp;e.</em>, <em>e.&thinsp;g.</em>, <a href=\"https://en.wikipedia.org/wiki/Q.E.D.\" target=\"_blank\"><em>q.&thinsp;e.&thinsp;d.</em></a> and similar should be formatted with a space, but there is a peculiarity: it is necessary to use a <em>non-breaking</em> space <code>~</code> or, even better, <a href=\"https://en.wikipedia.org/wiki/Thin_space\" target=\"_blank\"><em>thin space</em></a> <code>\\,</code> \u2014 this is a non-breaking space slightly narrower than the usual one. For example: <code>q.\\,e.\\,d.</code>. Otherwise, a case may occur during text wrap when part of the abbreviation remains on the line and part moves to the next. Thin space also looks better in this case than a regular space. It is also used when typing initials, for example: <code>J.\\,D.~Smith</code> or <code>J.\\,D.\\,Smith</code>.",
         "severity": 0
     },
     "DASH_HYPHEN": {
@@ -363,7 +363,7 @@ error_descriptions[SupportedLanguages.EN] = {
         "severity": 0
     },
     "DASH_SURROUND_WITH_SPACES": {
-        "msg": "An em dash should be surrounded by spaces on both sides. A particularly chic look is achieved by making one or both of these spaces non-breaking, so the em dash does not 'hang on the edge of the abyss' during line breaks. More about em dashes, hyphens, and similar can be found <a href=\"https://webstyle.sfu-kras.ru/tire-defis\" target=\"_blank\">here</a> and <a href=\"https://habrahabr.ru/post/20588/\" target=\"_blank\">here</a>. And, of course, it's never too late to read <a href=\"https://www.artlebedev.ru/kovodstvo/sections/97/\" target=\"_blank\">A. Lebedev</a>.",
+        "msg": "An em dash should be surrounded by spaces on both sides. A particularly chic look is achieved by making one or both of these spaces non-breaking, so the em dash does not 'hang on the edge of the abyss' during line breaks.",
         "severity": 0
     },
     "RU_ORDINAL_ABBREVIATION": {

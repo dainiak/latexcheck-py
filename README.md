@@ -27,7 +27,7 @@ Built-in formats:
 - `markdown`: `$...$` and `$$...$$`.
 - `doxygen`: `\f$...\f$` and `\f[...\f]` (used by OpenCV's docs).
 
-A rule may also set `line_prefix`, a regex removed from the start of continuation lines before linting. The built-in `doxygen` format uses this to strip the `*` that marks Doxygen comment lines.
+Doxygen rules set `infer_line_prefix`: the comment marker before the opening delimiter (`*`, `///`, or `//!`) is reused for continuation lines. A rule may also set `line_prefix` to an explicit regex.
 
 For other delimiters, pass a JSON config. A format with `extensions` is selected automatically when `--format` is omitted:
 

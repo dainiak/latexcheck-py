@@ -14,6 +14,7 @@ class MathRule:
     suffix: str
     mode: str = "inline"
     line_prefix: Optional[str] = None
+    infer_line_prefix: bool = False
 
 
 @dataclass(frozen=True)
@@ -41,8 +42,8 @@ BUILTIN_FORMATS: Dict[str, EmbeddedFormat] = {
     "doxygen": EmbeddedFormat(
         name="doxygen",
         rules=[
-            MathRule(r"\f[", r"\f]", "display", line_prefix=r"^[ \t]*\*[ \t]?"),
-            MathRule(r"\f$", r"\f$", "inline", line_prefix=r"^[ \t]*\*[ \t]?"),
+            MathRule(r"\f[", r"\f]", "display", infer_line_prefix=True),
+            MathRule(r"\f$", r"\f$", "inline", infer_line_prefix=True),
         ],
     ),
 }
@@ -68,11 +69,15 @@ def _parse_rule(raw) -> MathRule:
     line_prefix = raw.get("line_prefix")
     if line_prefix is not None and not isinstance(line_prefix, str):
         raise ValueError("rule line_prefix must be a string")
+    infer_line_prefix = raw.get("infer_line_prefix", False)
+    if not isinstance(infer_line_prefix, bool):
+        raise ValueError("rule infer_line_prefix must be a boolean")
     return MathRule(
         prefix=prefix,
         suffix=suffix,
         mode=_normalize_mode(raw.get("mode", "inline")),
         line_prefix=line_prefix or None,
+        infer_line_prefix=infer_line_prefix,
     )
 
 
@@ -139,6 +144,14 @@ def extract_math(source: str, rules: Iterable[MathRule]) -> List[MathSpan]:
             if body_end < 0:
                 break
             if source[body_start:body_end].strip():
+                line_prefix = rule.line_prefix
+                if line_prefix is None and rule.infer_line_prefix:
+                    line_start = source.rfind("\n", 0, start) + 1
+                    before = source[line_start:start]
+                    match = re.match(r"[ \t]*(/\*\*|/\*!|\*|///|//!|//)[ \t]*", before)
+                    if match:
+                        marker = "*" if match.group(1) in ("/**", "/*!") else match.group(1)
+                        line_prefix = r"^[ \t]*" + re.escape(marker) + r"[ \t]*"
                 candidates.append(
                     MathSpan(
                         start,
@@ -146,7 +159,7 @@ def extract_math(source: str, rules: Iterable[MathRule]) -> List[MathSpan]:
                         body_start,
                         body_end,
                         rule.mode,
-                        rule.line_prefix,
+                        line_prefix,
                     )
                 )
             cursor = start + 1

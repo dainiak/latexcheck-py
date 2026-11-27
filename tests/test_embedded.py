@@ -34,6 +34,19 @@ class EmbeddedMathTests(unittest.TestCase):
         errors = perform_checks_embedded(source, rules)
         self.assertEqual(len(errors.get("MULTIPLICATION_SIGN", [])), 1)
 
+    def test_infers_doxygen_prefix_with_extra_space_or_text(self):
+        rules = BUILTIN_FORMATS["doxygen"].rules
+        source = " *  " + r"\f[" + "\n * x = y\n * " + r"\f]" + "\n"
+        self.assertNotIn("MULTIPLICATION_SIGN", perform_checks_embedded(source, rules))
+
+        source = " * text " + r"\f[" + "\n * x = y\n * " + r"\f]" + "\n"
+        self.assertNotIn("MULTIPLICATION_SIGN", perform_checks_embedded(source, rules))
+
+    def test_infers_doxygen_slash_prefix(self):
+        source = "/// " + r"\f[" + "\n/// x = y\n/// " + r"\f]" + "\n"
+        errors = perform_checks_embedded(source, BUILTIN_FORMATS["doxygen"].rules)
+        self.assertNotIn("MULTIPLICATION_SIGN", errors)
+
     def test_display_wins_over_inline(self):
         spans = extract_math("$$x$$", BUILTIN_FORMATS["markdown"].rules)
         self.assertEqual(len(spans), 1)

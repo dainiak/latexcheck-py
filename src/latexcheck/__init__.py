@@ -676,6 +676,22 @@ def html_to_console(html_text, rich_text=True, width=80):
     return text
 
 
+def parse_excludes(values):
+    excluded = set()
+    for value in values or []:
+        for code in value.split(","):
+            code = code.strip().upper()
+            if code:
+                excluded.add(code)
+    return excluded
+
+
+def filter_errors(errors, excluded):
+    if not excluded:
+        return errors
+    return {code: positions for code, positions in errors.items() if code not in excluded}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Perform checks on a LaTeX file.")
     parser.add_argument("filename", help="Path to the LaTeX file")
@@ -688,6 +704,12 @@ def main():
         help="Input format: tex (default), markdown, doxygen, or a name defined in --config",
     )
     parser.add_argument("--config", help="JSON file defining additional embedded-math formats")
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        metavar="CODE",
+        help="Skip a check code (repeatable; comma-separated)",
+    )
     args = parser.parse_args()
 
     filename = args.filename
@@ -718,6 +740,7 @@ def main():
         errors = perform_checks(source, language=language, debug_mode=False)
     else:
         errors = perform_checks_embedded(source, rules, language=language)
+    errors = filter_errors(errors, parse_excludes(args.exclude))
 
     for key, value in errors.items():
         print(f"{key}:")

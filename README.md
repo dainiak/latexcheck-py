@@ -48,6 +48,12 @@ For other delimiters, pass a JSON config. A format with `extensions` is selected
 latexcheck --config formats.json doc.md
 ```
 
+To silence a check that does not apply, use `--exclude` (repeatable, comma-separated):
+
+```bash
+latexcheck --exclude MULTIPLICATION_SIGN doc.md
+```
+
 Help:
 ```bash
 latexcheck --help

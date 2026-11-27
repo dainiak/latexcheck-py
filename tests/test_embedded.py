@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from latexcheck import perform_checks
+from latexcheck import filter_errors, parse_excludes, perform_checks
 from latexcheck.embedded import (
     BUILTIN_FORMATS,
     extract_math,
@@ -46,6 +46,15 @@ class EmbeddedMathTests(unittest.TestCase):
         errors = perform_checks_embedded(source, BUILTIN_FORMATS["doxygen"].rules)
         self.assertIsInstance(errors, dict)
         perform_checks(r"\[ " + formula + r" \]")
+
+    def test_exclude_codes(self):
+        self.assertEqual(
+            parse_excludes(["MULTIPLICATION_SIGN,TEXT_IN_MATH_MODE", " foo "]),
+            {"MULTIPLICATION_SIGN", "TEXT_IN_MATH_MODE", "FOO"},
+        )
+        errors = {"MULTIPLICATION_SIGN": [1], "BACKSLASH_NEEDED": [2]}
+        self.assertEqual(filter_errors(errors, {"MULTIPLICATION_SIGN"}), {"BACKSLASH_NEEDED": [2]})
+        self.assertEqual(filter_errors(errors, set()), errors)
 
     def test_config_auto_selects_by_extension(self):
         config = {

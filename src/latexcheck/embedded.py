@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional
 
@@ -12,6 +13,7 @@ class MathRule:
     prefix: str
     suffix: str
     mode: str = "inline"
+    line_prefix: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,7 @@ class MathSpan:
     body_start: int
     body_end: int
     mode: str
+    line_prefix: Optional[str] = None
 
 
 @dataclass
@@ -37,7 +40,10 @@ BUILTIN_FORMATS: Dict[str, EmbeddedFormat] = {
     ),
     "doxygen": EmbeddedFormat(
         name="doxygen",
-        rules=[MathRule(r"\f[", r"\f]", "display"), MathRule(r"\f$", r"\f$", "inline")],
+        rules=[
+            MathRule(r"\f[", r"\f]", "display", line_prefix=r"^[ \t]*\*[ \t]?"),
+            MathRule(r"\f$", r"\f$", "inline", line_prefix=r"^[ \t]*\*[ \t]?"),
+        ],
     ),
 }
 
@@ -59,7 +65,15 @@ def _parse_rule(raw) -> MathRule:
         raise ValueError("rule prefix must be a non-empty string")
     if not isinstance(suffix, str) or not suffix:
         raise ValueError("rule suffix must be a non-empty string")
-    return MathRule(prefix=prefix, suffix=suffix, mode=_normalize_mode(raw.get("mode", "inline")))
+    line_prefix = raw.get("line_prefix")
+    if line_prefix is not None and not isinstance(line_prefix, str):
+        raise ValueError("rule line_prefix must be a string")
+    return MathRule(
+        prefix=prefix,
+        suffix=suffix,
+        mode=_normalize_mode(raw.get("mode", "inline")),
+        line_prefix=line_prefix or None,
+    )
 
 
 def load_formats(path: str) -> Dict[str, EmbeddedFormat]:
@@ -125,7 +139,16 @@ def extract_math(source: str, rules: Iterable[MathRule]) -> List[MathSpan]:
             if body_end < 0:
                 break
             if source[body_start:body_end].strip():
-                candidates.append(MathSpan(start, body_end + len(rule.suffix), body_start, body_end, rule.mode))
+                candidates.append(
+                    MathSpan(
+                        start,
+                        body_end + len(rule.suffix),
+                        body_start,
+                        body_end,
+                        rule.mode,
+                        rule.line_prefix,
+                    )
+                )
             cursor = start + 1
 
     candidates.sort(key=lambda span: (span.start, -(span.end - span.start)))
@@ -138,11 +161,34 @@ def extract_math(source: str, rules: Iterable[MathRule]) -> List[MathSpan]:
     return spans
 
 
-def _map_position(position: int, span: MathSpan, wrapper_length: int) -> int:
+def _strip_line_prefixes(body: str, base: int, pattern: Optional[str]):
+    if not pattern:
+        return body, None
+    regex = re.compile(pattern)
+    chars = []
+    offsets = []
+    for lineno, line in enumerate(body.splitlines(keepends=True)):
+        start = 0
+        if lineno:
+            match = regex.match(line)
+            if match:
+                start = match.end()
+        for index in range(start, len(line)):
+            chars.append(line[index])
+            offsets.append(base + index)
+    return "".join(chars), offsets
+
+
+def _map_position(position: int, span: MathSpan, wrapper_length: int, body_offsets=None) -> int:
     if position < wrapper_length:
         mapped = span.start + position
     else:
-        mapped = span.body_start + (position - wrapper_length)
+        body_index = position - wrapper_length
+        if body_offsets is not None:
+            if body_index < len(body_offsets):
+                return body_offsets[body_index]
+            return span.body_end
+        mapped = span.body_start + body_index
     return max(span.start, min(mapped, span.end))
 
 
@@ -155,7 +201,9 @@ def perform_checks_embedded(
 
     errors: Dict[str, List[int]] = {}
     for span in extract_math(source, rules):
-        body = source[span.body_start : span.body_end]
+        body, body_offsets = _strip_line_prefixes(
+            source[span.body_start : span.body_end], span.body_start, span.line_prefix
+        )
         if span.mode == "display":
             fragment = "\\[" + body + "\\]"
             wrapper_length = 2
@@ -175,7 +223,7 @@ def perform_checks_embedded(
                     bucket.append(span.start)
                 continue
             for position in positions:
-                bucket.append(_map_position(position, span, wrapper_length))
+                bucket.append(_map_position(position, span, wrapper_length, body_offsets))
 
     for code, positions in errors.items():
         errors[code] = list(dict.fromkeys(sorted(positions)))

@@ -24,6 +24,16 @@ class EmbeddedMathTests(unittest.TestCase):
         self.assertEqual(source[spans[0].body_start : spans[0].body_end], "x")
         self.assertIn("max(R,G,B)", source[spans[1].body_start : spans[1].body_end])
 
+    def test_doxygen_comment_prefix_is_not_multiplication(self):
+        rules = BUILTIN_FORMATS["doxygen"].rules
+        source = "* " + r"\f[" + "\n * x = y\n * " + r"\f]" + "\n"
+        errors = perform_checks_embedded(source, rules)
+        self.assertNotIn("MULTIPLICATION_SIGN", errors)
+
+        source = "* " + r"\f[" + "\n * x = y * z\n * " + r"\f]" + "\n"
+        errors = perform_checks_embedded(source, rules)
+        self.assertEqual(len(errors.get("MULTIPLICATION_SIGN", [])), 1)
+
     def test_display_wins_over_inline(self):
         spans = extract_math("$$x$$", BUILTIN_FORMATS["markdown"].rules)
         self.assertEqual(len(spans), 1)

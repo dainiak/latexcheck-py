@@ -16,6 +16,38 @@ Usage:
 latexcheck somefile.tex
 ```
 
+TeX math is often embedded in Markdown or other markup instead of living in a standalone `.tex` file. Use `--format` to lint the formulas in place:
+
+```bash
+latexcheck --format doxygen doc.md
+```
+
+Built-in formats:
+- `tex` (default): the whole file is LaTeX.
+- `markdown`: `$...$` and `$$...$$`.
+- `doxygen`: `\f$...\f$` and `\f[...\f]` (used by OpenCV's docs).
+
+For other delimiters, pass a JSON config. A format with `extensions` is selected automatically when `--format` is omitted:
+
+```json
+{
+  "formats": [
+    {
+      "name": "opencv",
+      "extensions": [".md"],
+      "rules": [
+        {"prefix": "\\f$", "suffix": "\\f$", "mode": "inline"},
+        {"prefix": "\\f[", "suffix": "\\f]", "mode": "display"}
+      ]
+    }
+  ]
+}
+```
+
+```bash
+latexcheck --config formats.json doc.md
+```
+
 Help:
 ```bash
 latexcheck --help

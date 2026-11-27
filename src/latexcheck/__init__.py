@@ -10,6 +10,7 @@ from typing import List
 
 import TexSoup
 
+from .embedded import load_formats, perform_checks_embedded, resolve_rules
 from .helpers import SupportedLanguages, error_descriptions
 
 
@@ -413,6 +414,7 @@ def perform_checks(source: str, language: SupportedLanguages = SupportedLanguage
             and node.prev_node.is_in_math
             and node.prev_node.cat != LatCat.CMD
             and not node.prev_node.is_in_arg
+            and node.prev_node.token
             and re_ends_with_digit_or_letter.match(node.prev_node.token)
         ):
             add_error("CDOT_FOR_READABILITY", node)
@@ -681,6 +683,11 @@ def main():
         "-l", "--language", choices=["EN", "RU"], default="EN", help="Language for error descriptions (EN or RU)"
     )
     parser.add_argument("-r", "--rich", choices=["Y", "N"], help="Enable rich text in console output", default="Y")
+    parser.add_argument(
+        "--format",
+        help="Input format: tex (default), markdown, doxygen, or a name defined in --config",
+    )
+    parser.add_argument("--config", help="JSON file defining additional embedded-math formats")
     args = parser.parse_args()
 
     filename = args.filename
@@ -688,12 +695,29 @@ def main():
         print(f"'File {filename} does not exist.")
         return
 
+    config_formats = {}
+    if args.config:
+        try:
+            config_formats = load_formats(args.config)
+        except (OSError, ValueError) as e:
+            print(f"Could not read config {args.config}: {e}")
+            return
+
+    try:
+        rules = resolve_rules(filename, args.format, config_formats)
+    except ValueError as e:
+        print(str(e))
+        return
+
     with open(filename, mode="r", encoding="utf-8") as infile:
         source = infile.read()
 
     language = SupportedLanguages.EN if args.language.lower() == "en" else SupportedLanguages.RU
     rich = args.rich.lower() == "y"
-    errors = perform_checks(source, language=language, debug_mode=False)
+    if rules is None:
+        errors = perform_checks(source, language=language, debug_mode=False)
+    else:
+        errors = perform_checks_embedded(source, rules, language=language)
 
     for key, value in errors.items():
         print(f"{key}:")

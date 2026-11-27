@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Optional
+
+from .helpers import SupportedLanguages
+
+
+@dataclass(frozen=True)
+class MathRule:
+    prefix: str
+    suffix: str
+    mode: str = "inline"
+
+
+@dataclass(frozen=True)
+class MathSpan:
+    start: int
+    end: int
+    body_start: int
+    body_end: int
+    mode: str
+
+
+@dataclass
+class EmbeddedFormat:
+    name: str
+    rules: List[MathRule]
+    extensions: List[str] = field(default_factory=list)
+
+
+BUILTIN_FORMATS: Dict[str, EmbeddedFormat] = {
+    "markdown": EmbeddedFormat(
+        name="markdown",
+        rules=[MathRule("$$", "$$", "display"), MathRule("$", "$", "inline")],
+    ),
+    "doxygen": EmbeddedFormat(
+        name="doxygen",
+        rules=[MathRule(r"\f[", r"\f]", "display"), MathRule(r"\f$", r"\f$", "inline")],
+    ),
+}
+
+
+def _normalize_mode(mode: str) -> str:
+    if mode in ("inline", "math-inline"):
+        return "inline"
+    if mode in ("display", "math-display"):
+        return "display"
+    raise ValueError(f"unknown math mode: {mode!r}")
+
+
+def _parse_rule(raw) -> MathRule:
+    if not isinstance(raw, dict):
+        raise ValueError("each rule must be an object")
+    prefix = raw.get("prefix")
+    suffix = raw.get("suffix")
+    if not isinstance(prefix, str) or not prefix:
+        raise ValueError("rule prefix must be a non-empty string")
+    if not isinstance(suffix, str) or not suffix:
+        raise ValueError("rule suffix must be a non-empty string")
+    return MathRule(prefix=prefix, suffix=suffix, mode=_normalize_mode(raw.get("mode", "inline")))
+
+
+def load_formats(path: str) -> Dict[str, EmbeddedFormat]:
+    with open(path, mode="r", encoding="utf-8") as infile:
+        data = json.load(infile)
+    if isinstance(data, dict):
+        raw_formats = data.get("formats", [])
+    elif isinstance(data, list):
+        raw_formats = data
+    else:
+        raise ValueError("config must be a JSON object or array")
+
+    formats: Dict[str, EmbeddedFormat] = {}
+    for raw in raw_formats:
+        if not isinstance(raw, dict):
+            raise ValueError("each format must be an object")
+        name = raw.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError("each format needs a non-empty name")
+        if name in BUILTIN_FORMATS or name == "tex":
+            raise ValueError(f"format name {name!r} is reserved")
+        raw_rules = raw.get("rules")
+        if not isinstance(raw_rules, list) or not raw_rules:
+            raise ValueError(f"format {name!r} needs a non-empty rules list")
+        extensions = raw.get("extensions", [])
+        if not isinstance(extensions, list) or not all(isinstance(ext, str) and ext for ext in extensions):
+            raise ValueError(f"format {name!r} extensions must be strings")
+        formats[name] = EmbeddedFormat(
+            name=name,
+            rules=[_parse_rule(rule) for rule in raw_rules],
+            extensions=list(extensions),
+        )
+    return formats
+
+
+def resolve_rules(filename: str, format_name: Optional[str], config_formats: Dict[str, EmbeddedFormat]):
+    if format_name:
+        if format_name == "tex":
+            return None
+        if format_name in BUILTIN_FORMATS:
+            return BUILTIN_FORMATS[format_name].rules
+        if format_name in config_formats:
+            return config_formats[format_name].rules
+        raise ValueError(f"unknown format: {format_name!r}")
+
+    for fmt in config_formats.values():
+        for extension in fmt.extensions:
+            if filename.lower().endswith(extension.lower()):
+                return fmt.rules
+    return None
+
+
+def extract_math(source: str, rules: Iterable[MathRule]) -> List[MathSpan]:
+    candidates: List[MathSpan] = []
+    for rule in rules:
+        cursor = 0
+        while True:
+            start = source.find(rule.prefix, cursor)
+            if start < 0:
+                break
+            body_start = start + len(rule.prefix)
+            body_end = source.find(rule.suffix, body_start)
+            if body_end < 0:
+                break
+            if source[body_start:body_end].strip():
+                candidates.append(MathSpan(start, body_end + len(rule.suffix), body_start, body_end, rule.mode))
+            cursor = start + 1
+
+    candidates.sort(key=lambda span: (span.start, -(span.end - span.start)))
+    spans: List[MathSpan] = []
+    last_end = -1
+    for span in candidates:
+        if span.start >= last_end:
+            spans.append(span)
+            last_end = span.end
+    return spans
+
+
+def _map_position(position: int, span: MathSpan, wrapper_length: int) -> int:
+    if position < wrapper_length:
+        mapped = span.start + position
+    else:
+        mapped = span.body_start + (position - wrapper_length)
+    return max(span.start, min(mapped, span.end))
+
+
+def perform_checks_embedded(
+    source: str,
+    rules: Iterable[MathRule],
+    language: SupportedLanguages = SupportedLanguages.EN,
+):
+    from . import perform_checks
+
+    errors: Dict[str, List[int]] = {}
+    for span in extract_math(source, rules):
+        body = source[span.body_start : span.body_end]
+        if span.mode == "display":
+            fragment = "\\[" + body + "\\]"
+            wrapper_length = 2
+        else:
+            fragment = "$" + body + "$"
+            wrapper_length = 1
+
+        try:
+            fragment_errors = perform_checks(fragment, language=language)
+        except Exception:
+            fragment_errors = {"PARSE_ERROR": [0]}
+
+        for code, positions in fragment_errors.items():
+            bucket = errors.setdefault(code, [])
+            if not positions:
+                if code == "PARSE_ERROR":
+                    bucket.append(span.start)
+                continue
+            for position in positions:
+                bucket.append(_map_position(position, span, wrapper_length))
+
+    for code, positions in errors.items():
+        errors[code] = list(dict.fromkeys(sorted(positions)))
+    return errors
